@@ -8,10 +8,9 @@
 2. 点击下拉框选择要传输文件的对方ip
 3. 点击**打开**按钮，选择要发送的文件
 4. 点击**发送**按钮发送文件
-## Linux
-UI操作同Windows
-* `python transfer.py`
 
+## Linux
+* `$ python transfer.py`
 
 # Requirements
-* `pip install wxpython`
+* `$ pip install wxpython`
