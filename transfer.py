@@ -7,7 +7,7 @@ import wx
 
 PORT_BROADCAST = 1060  # 广播端口 用于探测同一局域网内用户
 PORT_TRANSFER = 1080  # 文件传输端口
-alive_hosts = {}  # 存活主机信息
+ALIVE_HOSTS = {}  # 存活主机信息
 
 
 def get_host_ip():
@@ -162,7 +162,7 @@ class mainFrame(wx.Frame):
         try:
             s.send(header_json.encode('utf-8'))  # 发送文件头
             self.status_bar.SetStatusText('等待对方同意...')
-            confirm = s.recv(2)  # 接收确认信息 ok/no
+            confirm = s.recv(4)  # 接收确认信息 ok/no/busy
         except:
             dlg = wx.MessageDialog(None, '连接中断!')
             dlg.ShowModal()
@@ -184,6 +184,13 @@ class mainFrame(wx.Frame):
             dlg.Destroy()
             s.close()
             self.is_transfering = False
+        elif confirm.decode('utf-8') == 'busy':
+            self.status_bar.SetStatusText('对方正忙...')
+            dlg = wx.MessageDialog(None, '对方正忙,发送失败!')
+            dlg.ShowModal()
+            dlg.Destroy()
+            s.close()
+            self.is_transfering = False
 
     def receive(self):
         # 接收文件
@@ -192,15 +199,15 @@ class mainFrame(wx.Frame):
         s.listen(1)
         while True:
             conn, addr = s.accept()  # conn为新建立的socket!
-            data = conn.recv(1024).decode('utf-8')
+            header = conn.recv(1024).decode('utf-8') #文件头
             if self.is_transfering:  # 正在传送文件，拒接收文件
-                conn.send('no'.encode('utf-8'))
+                conn.send('busy'.encode('utf-8'))
                 continue
 
-            print(addr[0]+':'+data)
-            data = json.loads(data)
-            filename = data['filename']
-            size = data['size']
+            print(addr[0]+':'+header)
+            header = json.loads(header)
+            filename = header['filename']
+            size = header['size']
 
             dlg = wx.MessageDialog(
                 None, '是否接受来自'+addr[0]+'的文件:'+filename+'?', style=wx.YES_NO | wx.ICON_QUESTION)
@@ -210,15 +217,19 @@ class mainFrame(wx.Frame):
                 # dlg2 = FileDialog(self,"请选择文件保存路径",os.getcwd(),style=wx.FD_OPEN)
                 if dlg2.ShowModal() == wx.ID_OK:
                     conn.send('ok'.encode('utf-8'))
-                    path = dlg.GetPath()
+                    path = dlg2.GetPath()
                     print(path)
                     dlg2.Destroy()
+                else:
+                    conn.send('no'.encode('utf-8'))
+                    dlg.Destroy()
+                    continue
 
                 try:
                     f = open(path+'/'+filename, 'wb')
                     self.status_bar.SetStatusText('开始接收文件...')
                     print('开始接收:'+filename+'...')
-                    receive_size = 0
+                    receie_size = 0
                     accum_time, accum_count = 0, 0
                     while receive_size < size:
                         time_start = time.time()
@@ -263,11 +274,11 @@ class mainFrame(wx.Frame):
             if data == 'alive':
                 if address[0] != host_ip:  # 非本机ip广播
                     t = time.time()
-                    if address[0] not in alive_hosts:
-                        alive_hosts[address[0]] = t
-                        alive_hosts_lst = [host for host in alive_hosts.keys()]
+                    if address[0] not in list(ALIVE_HOSTS.keys()):
+                        ALIVE_HOSTS[address[0]] = t
+                        alive_hosts_lst = [host for host in ALIVE_HOSTS.keys()]
                         self.ip_choice.SetItems(alive_hosts_lst)  # 更新存活主机列表
-                    alive_hosts[address[0]] = t  # 更新生存时间
+                    ALIVE_HOSTS[address[0]] = t  # 更新生存时间
                 print(address[0]+':'+data)
             time.sleep(1)
 
@@ -277,10 +288,10 @@ class mainFrame(wx.Frame):
             s.sendto('alive'.encode('utf-8'),
                      ('<broadcast>', PORT_BROADCAST))  # 发送本机存活信息
             t = time.time()
-            for host in alive_hosts:
-                if t-alive_hosts[host] >= 3:  # 如果3秒还没收到alive消息则判定主机退出
-                    del alive_hosts[host]
-                    alive_hosts_lst = [host for host in alive_hosts.keys()]
+            for host in list(ALIVE_HOSTS.keys()):
+                if t-ALIVE_HOSTS[host] >= 2:  # 如果3秒还没收到alive消息则判定主机退出
+                    del ALIVE_HOSTS[host]
+                    alive_hosts_lst = [host for host in ALIVE_HOSTS.keys()]
                     self.ip_choice.SetItems(alive_hosts_lst)  # 更新存活主机列表
             time.sleep(1)
 
